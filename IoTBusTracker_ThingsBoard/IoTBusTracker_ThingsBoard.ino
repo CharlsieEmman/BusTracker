@@ -72,7 +72,7 @@ void loop() {
   }
   if (!tb.connected()) {
     Serial.print("Connecting to ThingsBoard...");
-    if (!tb.connect(THINGSBOARD_SERVER, TOKEN)) {
+    if (!tb.connect(THINGSBOARD_SERVER, TOKEN, THINGSBOARD_PORT)) { //dinagdagan ko ng port, try lang
       Serial.println("Failed to connect to ThingsBoard.");
     } else {
       Serial.println("Connected.");
