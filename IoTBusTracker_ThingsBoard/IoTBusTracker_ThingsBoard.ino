@@ -1,22 +1,10 @@
-// ======================= User Configuration =======================
-// Please enter your WiFi and ThingsBoard credentials here.
-// You can get your device access token from your device on ThingsBoard.
-constexpr char WIFI_SSID[] = "HUAWEI-YpND";
-constexpr char WIFI_PASSWORD[] = "Tataycruz";
-constexpr char TOKEN[] = "C3dvKW5eHmxvJKbXoSVO";
-
-// ThingsBoard server details
-constexpr char THINGSBOARD_SERVER[] = "demo.thingsboard.io";
-constexpr uint16_t THINGSBOARD_PORT = 1883U;
-
 // ======================= Library Includes =======================
-#include <Arduino_MQTT_Client.h>
-#include <Server_Side_RPC.h>
-#include <Attribute_Request.h>
-#include <WiFi.h>
-#include <ThingsBoard.h>
-#include <HardwareSerial.h>
-#include <TinyGPS++.h>
+//#if defined(ESP8266)
+//#include <ESP8266WiFi.h>
+//#define THINGSBOARD_ENABLE_PROGMEM 0
+//#elif defined(ESP32) || defined(RASPBERRYPI_PICO) || defined(RASPBERRYPI_PICO_W)
+//#include <WiFi.h>
+//#endif
 
 // ======================= Sensor and Pin Definitions =======================
 #define GPS_RX_PIN 2 // Replace the number with the RX Pin
@@ -26,6 +14,35 @@ HardwareSerial gpsSerial(2);
 #define rightSensor 14 // Replace the number with the right sensor pin (people boarding)
 #define leftSensor 12 // Replace the number with the left sensor pin (people unboarding)
 #define relay 0
+
+#include <Arduino_MQTT_Client.h>
+#include <Server_Side_RPC.h>
+#include <Attribute_Request.h>
+#include <WiFi.h>
+#include <Shared_Attribute_Update.h>
+#include <ThingsBoard.h>
+#include <HardwareSerial.h>
+#include <TinyGPS++.h>
+
+// ======================= User Configuration =======================
+// Please enter your WiFi and ThingsBoard credentials here.
+// You can get your device access token from your device on ThingsBoard.
+constexpr char WIFI_SSID[] = "Charlsie";
+constexpr char WIFI_PASSWORD[] = "kissmomunaako";
+constexpr char TOKEN[] = "C3dvKW5eHmxvJKbXoSVO";
+
+// ThingsBoard server details
+constexpr char THINGSBOARD_SERVER[] = "demo.thingsboard.io";
+constexpr uint16_t THINGSBOARD_PORT = 1883U;
+
+// Maximum size packets will ever be sent or received by the underlying MQTT client
+constexpr uint32_t MAX_MESSAGE_SIZE = 1024U;
+
+// Baud rate for the debugging serial connection
+constexpr uint32_t SERIAL_DEBUG_BAUD = 115200U;
+
+constexpr size_t MAX_ATTRIBUTES = 3U;
+constexpr uint64_t REQUEST_TIMEOUT_MICROSECONDS = 5000U * 1000U;
 
 // ======================= Global Variables =======================
 int peopleCount = 0;
@@ -41,14 +58,28 @@ TinyGPSPlus gps;
 // ThingsBoard client setup
 WiFiClient wifiClient;
 Arduino_MQTT_Client mqttClient(wifiClient);
-ThingsBoard tb(mqttClient);
+
+// Initialize apis
+Server_Side_RPC<3U, 5U> rpc;
+Attribute_Request<2U, MAX_ATTRIBUTES> attr_request;
+Shared_Attribute_Update<3U, MAX_ATTRIBUTES> shared_update;
+
+const std::array<IAPI_Implementation*, 3U> apis = {
+  &rpc,
+  &attr_request,
+  &shared_update
+};
+
+// Initialize ThingsBoard
+ThingsBoard tb(mqttClient, MAX_MESSAGE_SIZE, Default_Max_Stack_Size);
 
 // Interval for sending telemetry data to ThingsBoard
-constexpr uint32_t telemetrySendInterval = 5000U;
+constexpr uint32_t telemetrySendInterval = 2000U;
 unsigned long lastTelemetrySendTime = 0;
+uint32_t previousDataSend;
 
 // ======================= Function Prototypes =======================
-void InitWiFi();
+//void InitWiFi();
 const bool reconnect();
 void resetSequence();
 void sendTelemetry();
@@ -62,18 +93,23 @@ void setup() {
   pinMode(relay, OUTPUT);
   digitalWrite(relay, HIGH);
 
+  delay(1000);
   InitWiFi();
 }
 
 void loop() {
+  delay(10);
+
   // Check WiFi and ThingsBoard connection
   if (!reconnect()) {
     return;
   }
+
   if (!tb.connected()) {
     Serial.print("Connecting to ThingsBoard...");
-    if (!tb.connect(THINGSBOARD_SERVER, TOKEN)) {
+    if (!tb.connect(THINGSBOARD_SERVER, TOKEN, THINGSBOARD_PORT)) {
       Serial.println("Failed to connect to ThingsBoard.");
+      return;
     } else {
       Serial.println("Connected.");
     }
@@ -125,7 +161,7 @@ void loop() {
   // Control relay based on people count
   digitalWrite(relay, peopleCount > 0 ? LOW : HIGH);
 
-  // Send data to ThingsBoard at a set interval
+  // Send data to ThingsBoard at a set interval - dito ako nagstop magcheck
   if (millis() - lastTelemetrySendTime > telemetrySendInterval) {
     sendTelemetry();
     lastTelemetrySendTime = millis();
@@ -133,8 +169,6 @@ void loop() {
 
   // Process ThingsBoard MQTT messages
   tb.loop();
-  
-  delay(10);
 }
 
 // Function to initialize WiFi connection
@@ -150,7 +184,8 @@ void InitWiFi() {
 
 // Function to reconnect if WiFi connection is lost
 const bool reconnect() {
-  if (WiFi.status() == WL_CONNECTED) {
+  const wl_status_t status = WiFi.status();
+  if (status == WL_CONNECTED) {
     return true;
   }
   InitWiFi();
