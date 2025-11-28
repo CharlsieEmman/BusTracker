@@ -91,12 +91,12 @@ void countPass1()
   inStatus = digitalRead(rightSensor);
   outStatus = digitalRead(leftSensor);
 
-  if (digitalRead(rightSensor) == HIGH)
+  if (digitalRead(rightSensor) == 1)
   {
     in = countin++;
   }
  
-  if (digitalRead(leftSensor) == HIGH)
+  if (digitalRead(leftSensor) == 1)
   {
     out = countout++;
   }
