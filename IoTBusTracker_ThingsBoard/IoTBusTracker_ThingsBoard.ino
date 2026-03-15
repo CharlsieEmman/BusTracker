@@ -17,13 +17,13 @@
 #include <Shared_Attribute_Update.h>
 #include <ThingsBoard.h>
 
-#define rightSensor 1
-#define leftSensor 2
-#define relay 0    
+int rightSensor = 27;
+int leftSensor = 14;
+#define relay 17
 
-const char* googleApiKey = "YOUR_GOOGLE_API_KEY";
-const char* ssid = "SSID";
-const char* password = "PASSWORD";
+const char* googleApiKey = "YOUR_API_KEY";
+const char* ssid = "YOUR_SSID";
+const char* password = "YOUR_PASSWORD";
 const char* token = "YOUR_THINGSBOARD_TOKEN";
 
 // ThingsBoard Server Connection
@@ -62,15 +62,9 @@ uint32_t previousDataSend;
 AsyncWebServer server(80);
 WifiLocation location (googleApiKey);
 
-int inStatus;
-int outStatus;
-
-int countin = 0;
-int countout = 0;
-
-int in;
-int out;
-int now;
+int in = 0;
+int out = 0;
+int now = 0;
 
 // Set time via NTP, as required for x.509 validation
 void setClock () 
@@ -109,19 +103,6 @@ void connectToThingsBoard()
   }
 }
 
-void sendLocation(double lat, double lon)
-{
-  tb.sendTelemetryData("latitude", lat);
-  tb.sendTelemetryData("longitude", lon);
-  WebSerial.println("Location sent to ThingsBoard.");
-}
-
-void sendPassengerCount(int now)
-{
-  tb.sendTelemetryData("peopleCount", now);
-  WebSerial.println("Passenger count sent to ThingsBoard.");
-}
-
 void getLocation() 
 {
   location_t loc = location.getGeoFromWiFi();
@@ -130,45 +111,21 @@ void getLocation()
   WebSerial.println ("Latitude: " + String(loc.lat, 7));
   WebSerial.println("Longitude: " + String(loc.lon, 7));
 
-  sendLocation(loc.lat, loc.lon);
+  if(loc.lat != 0 && loc.lon != 0)
+  {
+    sendLocation(loc.lat, loc.lon);
+  }
 }
 
-void checkEntrance()
+void sendLocation(double lat, double lon)
 {
-  inStatus = digitalRead(rightSensor);
-  outStatus = digitalRead(leftSensor);
-
-  if (inStatus == 0)
+  if (tb.sendTelemetryData("latitude", lat) && tb.sendTelemetryData("longitude", lon))
   {
-    in = countin++;
-  }
- 
-  if (outStatus == 0)
-  {
-    out = countout++;
-  }
- 
-  now = in - out;
- 
-  if (now <= 0)
-  {
-    digitalWrite(relay, HIGH);
-    WebSerial.println("No Visitors! Light Off");
-    sendPassengerCount(0);
-
-    delay(500);
+    WebSerial.println("Location sent to ThingsBoard.");
   }
   else
   {
-    WebSerial.print("Current Passengers: ");
-    WebSerial.println(now);
-    WebSerial.print("IN: ");
-    WebSerial.println(in);
-    WebSerial.print("OUT: ");
-    WebSerial.println(out);
-    sendPassengerCount(now);
-
-    delay(500);
+    WebSerial.println("Failed to send data.");
   }
 }
 
@@ -178,10 +135,13 @@ void setup()
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
 
-  pinMode(rightSensor, INPUT);
-  pinMode(leftSensor, INPUT);
+  pinMode(rightSensor, INPUT_PULLUP);
+  pinMode(leftSensor, INPUT_PULLUP);
   pinMode(relay, OUTPUT);
+
   digitalWrite(relay, LOW);
+  pinMode(4, OUTPUT);
+  digitalWrite(4, LOW);
 
   // Initialize WebSerial
   WebSerial.begin(&server);
@@ -204,8 +164,6 @@ void setup()
   // Start the server
   server.begin();
 
-  // End ng Web Serial na need i-copy paste
-
   WebSerial.println("Connected to WiFi!");
   WebSerial.println(WiFi.localIP());
   connectToThingsBoard();
@@ -218,11 +176,15 @@ void loop()
 {
   if(!tb.connected())
   {
+    WebSerial.println("ThingsBoard connection lost. Reconnecting.");
     connectToThingsBoard();
+    return;
   }
-  
+
+  tb.loop();
+
+  //checkEntrance();
   getLocation();
-  checkEntrance();
   
-  delay(100);
+  delay(50);
 }
